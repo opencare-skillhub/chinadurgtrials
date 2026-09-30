@@ -1,0 +1,16 @@
+# Local credentials and runtime state
+config.json
+*.cookies
+.env
+.venv/
+venv/
+
+# Generated crawl outputs and logs
+output/
+test-output/
+*.log
+__pycache__/
+*.py[cod]
+
+# macOS
+.DS_Store

@@ -18,6 +18,7 @@ agent_created: true
 - `scripts/main.py`：交互式菜单入口。
 - `scripts/cookie_tools.py`：从浏览器 cURL 或 HTTP 响应头提取、合并 Cookie。
 - `scripts/build_json_from_raw.py`：不访问网络，从 `raw/` HTML 回建 RAG JSON。
+- `scripts/verify_output.py`：逐个核对最近一次成功登记号是否具有 raw HTML、RAG JSON、原始 DOC、原始响应留档和可选 DOCX。
 - `scripts/config.example.json`：无凭证的配置模板。
 - `scripts/requirements.txt`：Python 依赖。
 - `references/platform-workflow.md`：平台端点、页面结构、产物与排查参考。
@@ -142,13 +143,24 @@ python3 scripts/build_json_from_raw.py --output "output/胰腺癌" --force
 完成抓取后执行以下检查：
 
 1. 读取 `summary.json`，核对 `total_records`、`total_extracted`、`success_count`、`fail_count`。
-2. 对 `summary.json.results` 中的登记号去重，并检查每个登记号是否具备预期的 raw HTML、JSON、`.doc`、`.docx`（若当前系统支持转换）。
-3. 报告增量跳过数量与失败数量，区分“未变化跳过”和“下载/解析失败”。
-4. 将 Cookie、原始会话头和任何个人凭证排除在报告、压缩包和 Git 提交之外。
+2. 执行以下命令，逐一比对 `summary.json.results` 中成功记录的登记号与各类归档产物：
+
+```bash
+python3 scripts/verify_output.py --output "output/胰腺癌"
+```
+
+3. 在非 macOS 环境无法使用 `textutil` 生成 DOCX 时，改用：
+
+```bash
+python3 scripts/verify_output.py --output "output/胰腺癌" --allow-missing-docx
+```
+
+4. 报告增量跳过数量与失败数量，区分“未变化跳过”和“下载/解析失败”。
+5. 将 Cookie、原始会话头和任何个人凭证排除在报告、压缩包和 Git 提交之外。
 
 ## 常见故障
 
-- **没有结果表格或被重定向登录页**：Cookie 已失效、不完整或无权限；更新浏览器 cURL 中的 Cookie。
+- **没有结果表格、空 `<body>` 且含混淆 meta/script，或被重定向登录页**：这是会话失效或反爬挑战页，不可直接解释为“检索结果为 0 条”。更新浏览器实际搜索请求 cURL 中的完整 Cookie 后重试；`--debug` 会保存响应以便复核。
 - **`raw/` 有文件但 `json/` 为空**：执行 `build_json_from_raw.py`；检查详情页中是否存在包含表格的 `paddingSide15` 容器。
 - **原始 `.doc` 无法打开**：确认响应包含 WordML 特征而非登录 HTML；使用 WPS/Word，或打开生成的 `.docx`。
 - **增量任务没有下载 Word**：若汇总显示记录 `unchanged`，这是预期行为；先核对历史输出是否存在对应文档。

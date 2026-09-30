@@ -306,6 +306,16 @@ class ChinaDrugTrialsScraper:
 
         soup = BeautifulSoup(resp.text, 'html.parser')
 
+        # FSSBBI 反爬挑战页通常是空 body 加混淆 meta/script；它不能被当作“0 条结果”。
+        # debug 模式已在上方保存原始响应，方便调用方更新浏览器会话后复核。
+        body = soup.body
+        body_text = body.get_text(strip=True) if body else ''
+        if not body_text and len(soup.find_all('meta')) >= 2:
+            raise RuntimeError(
+                '站点返回反爬挑战页，当前 Cookie 缺少有效浏览器会话。'
+                '请在浏览器完成访问后，从实际搜索请求复制完整 cURL，并通过 Cookie 工具更新 config.json。'
+            )
+
         # 检查是否有搜索结果
         table = soup.find('table', class_='searchTable')
         if not table:

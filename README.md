@@ -15,6 +15,7 @@ china-drug-trials-skills/
 │   ├── main.py
 │   ├── cookie_tools.py
 │   ├── build_json_from_raw.py
+│   ├── verify_output.py
 │   ├── config.example.json
 │   └── requirements.txt
 └── references/
@@ -36,13 +37,22 @@ cp scripts/config.example.json config.json
 python3 scripts/main.py
 ```
 
-`main.py` 会在当前目录读取/创建 `config.json`。其 Cookie 更新菜单支持粘贴浏览器 cURL 或 HTTP 响应头。
+`main.py` 会在当前目录读取/创建 `config.json`。其 Cookie 更新菜单支持粘贴浏览器 cURL 或 HTTP 响应头。若脚本报“站点返回反爬挑战页”，请不要把它误判为 0 条结果；需从浏览器实际搜索请求复制完整 cURL 更新会话。
 
 也可以直接运行：
 
 ```bash
 python3 scripts/scraper.py --config config.json
 python3 scripts/scraper.py --config config.json --incremental
+
+# 核对最近一次成功登记号的归档完整性
+python3 scripts/verify_output.py --output "output/胰腺癌"
+```
+
+在 Linux 或 Windows 上，脚本仍可保存网页原样 WordML `.doc`；若无 macOS `textutil`，用下列命令在验收时忽略可选的 `.docx`：
+
+```bash
+python3 scripts/verify_output.py --output "output/胰腺癌" --allow-missing-docx
 ```
 
 ## 安全与合规
