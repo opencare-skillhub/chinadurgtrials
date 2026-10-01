@@ -4,10 +4,12 @@ config.json
 .env
 .venv/
 venv/
+.browser-profile/
+.session/
 
 # Generated crawl outputs and logs
 output/
-test-output/
+test-output*/
 *.log
 __pycache__/
 *.py[cod]

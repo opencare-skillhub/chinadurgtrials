@@ -105,6 +105,26 @@ def update_cookie(config_path):
     print(f'当前 Cookie（脱敏）: {mask_cookie(config["cookies"])}')
 
 
+def refresh_browser_session(config_path):
+    """启动专用浏览器会话，自动导出并验证站点 Cookie。"""
+    print('\n将打开专用 Chromium 会话，仅处理 chinadrugtrials.org.cn。')
+    print('如站点显示人工验证，请在弹出的专用窗口中按正常流程完成后回到这里按回车。')
+    command = [
+        PYTHON,
+        str(SCRIPT_DIR / 'session_bootstrap.py'),
+        '--config', str(config_path),
+        '--keywords', load_config(config_path).get('keywords', '胰腺癌'),
+        '--state', load_config(config_path).get('state', ''),
+    ]
+    completed = subprocess.run(command, cwd=SKILL_ROOT)
+    if completed.returncode == 0:
+        print('浏览器会话已验证并保存。')
+    elif completed.returncode == 2:
+        print('Cookie 已导出，但尚未通过验证；请在浏览器窗口完成正常验证后再次刷新。')
+    else:
+        print(f'浏览器会话刷新失败，返回码: {completed.returncode}')
+
+
 def build_run_command(config_path, incremental):
     return [PYTHON, str(SCRIPT_DIR / 'scraper.py'), '--config', str(config_path)] + (['--incremental'] if incremental else [])
 
@@ -215,11 +235,12 @@ def main():
         print(f'配置: {config_path.name}')
         print('1. 设置查询条件')
         print('2. 更新 Cookie（粘贴 cURL 或响应头）')
-        print('3. 全量同步（重抓并重写所有结果）')
-        print('4. 增量同步（仅保存新增或内容变化记录）')
-        print('5. 从 raw HTML 离线补建 JSON')
-        print('6. 查看状态')
-        print('7. 切换配置文件')
+        print('3. 刷新浏览器会话（自动导出 Cookie，推荐）')
+        print('4. 全量同步（重抓并重写所有结果）')
+        print('5. 增量同步（仅保存新增或内容变化记录）')
+        print('6. 从 raw HTML 离线补建 JSON')
+        print('7. 查看状态')
+        print('8. 切换配置文件')
         print('0. 退出')
         choice = input('选择: ').strip()
 
@@ -228,14 +249,16 @@ def main():
         elif choice == '2':
             update_cookie(config_path)
         elif choice == '3':
-            run_scraper(config_path, incremental=False)
+            refresh_browser_session(config_path)
         elif choice == '4':
-            run_scraper(config_path, incremental=True)
+            run_scraper(config_path, incremental=False)
         elif choice == '5':
-            rebuild_json(config_path)
+            run_scraper(config_path, incremental=True)
         elif choice == '6':
-            show_status(config_path)
+            rebuild_json(config_path)
         elif choice == '7':
+            show_status(config_path)
+        elif choice == '8':
             value = prompt('配置文件路径', str(config_path))
             config_path = Path(value).expanduser().resolve()
             ensure_config(config_path)

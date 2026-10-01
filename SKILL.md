@@ -17,6 +17,7 @@ agent_created: true
 - `scripts/scraper.py`：命令行主抓取器。
 - `scripts/main.py`：交互式菜单入口。
 - `scripts/cookie_tools.py`：从浏览器 cURL 或 HTTP 响应头提取、合并 Cookie。
+- `scripts/session_bootstrap.py`：启动本 Skill 专用 Chromium Profile，导出并验证目标站点 Cookie，保存本地 cURL；不读取日常浏览器 Profile，也不绕过人工验证。
 - `scripts/build_json_from_raw.py`：不访问网络，从 `raw/` HTML 回建 RAG JSON。
 - `scripts/verify_output.py`：逐个核对最近一次成功登记号是否具有 raw HTML、RAG JSON、原始 DOC、原始响应留档和可选 DOCX。
 - `scripts/config.example.json`：无凭证的配置模板。
@@ -33,6 +34,7 @@ agent_created: true
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r scripts/requirements.txt
+python3 -m playwright install chromium
 cp scripts/config.example.json config.json
 ```
 
@@ -45,18 +47,28 @@ cp scripts/config.example.json config.json
 | 首次获取某一检索结果的全部记录 | 全量同步 |
 | 每日检查新增或内容变化 | 增量同步 |
 | 已有详情 raw HTML，需要生成或调整 JSON | 离线回建 JSON |
-| Cookie 过期或缺失 | 从 cURL/响应头更新 Cookie |
+| Cookie 过期或缺失 | 运行 `session_bootstrap.py` 刷新专用浏览器会话；仅在网站要求时完成正常人工确认 |
 | 中途终止且只想补齐缺失详情 | 非增量模式配合 `--resume` |
 
 ## 更新 Cookie
 
-优先使用交互菜单：
+优先使用专用浏览器会话刷新：
+
+```bash
+python3 scripts/session_bootstrap.py --config config.json --keywords "胰腺癌" --state "招募中"
+```
+
+启动的 Chromium Profile 保存在当前 Skill 目录 `.browser-profile/`，只用于该平台，不读取用户日常 Chrome Profile。程序会导出目标域 Cookie，并用一次只读搜索请求验证会话；验证成功后将 Cookie 保存到本地 `config.json`，同时在 `.session/latest-search.curl` 保存可复现 cURL。以上文件都属于凭证或运行态，必须保持在 `.gitignore` 中。
+
+若平台出现人工验证，仅允许在该专用浏览器窗口中按网站正常流程完成；不得绕过验证码、访问控制或反爬机制。完成后回到终端继续导出；如果验证仍未通过，明确报告会话不可用，不能将其解释为“0 条结果”。
+
+也可使用交互菜单：
 
 ```bash
 python3 scripts/main.py
 ```
 
-在“更新 Cookie”菜单中，优先选择“粘贴浏览器复制的 cURL”。该方式从 `-b` 或 `--cookie` 提取请求 Cookie，通常比单独的响应头更完整。
+在菜单中选择“刷新浏览器会话”。保留“粘贴浏览器复制的 cURL”作为无法启动本地 Chromium 时的备用方式；该方式从 `-b` 或 `--cookie` 提取请求 Cookie，通常比单独的响应头更完整。
 
 也可在 Python 中调用：
 
@@ -96,6 +108,9 @@ python3 scripts/scraper.py \
 
 ```bash
 python3 scripts/scraper.py --config config.json --incremental
+
+# Cookie 遇到挑战页时，自动启动专用浏览器刷新并重试一次
+python3 scripts/scraper.py --config config.json --incremental --auto-refresh-session
 ```
 
 按以下顺序处理每条记录：

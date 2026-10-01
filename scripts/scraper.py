@@ -29,6 +29,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 import logging
@@ -257,6 +258,16 @@ class ChinaDrugTrialsScraper:
 
     # ── HTTP 请求 ─────────────────────────────
 
+    @staticmethod
+    def _is_challenge_response(html):
+        """识别空 body 的 FSSBBI 反爬挑战页。"""
+        lower = (html or '').lower()
+        compact = ''.join((html or '').split())
+        return (
+            ('<body></body>' in compact or '<body/>' in compact)
+            and (lower.count('<meta') >= 2 or '_$tw' in lower or 'fssbbi' in lower)
+        )
+
     def _post(self, url, data, referer=None):
         """带重试的 POST 请求"""
         headers = {}
@@ -310,10 +321,10 @@ class ChinaDrugTrialsScraper:
         # debug 模式已在上方保存原始响应，方便调用方更新浏览器会话后复核。
         body = soup.body
         body_text = body.get_text(strip=True) if body else ''
-        if not body_text and len(soup.find_all('meta')) >= 2:
+        if self._is_challenge_response(resp.text) or (not body_text and len(soup.find_all('meta')) >= 2):
             raise RuntimeError(
                 '站点返回反爬挑战页，当前 Cookie 缺少有效浏览器会话。'
-                '请在浏览器完成访问后，从实际搜索请求复制完整 cURL，并通过 Cookie 工具更新 config.json。'
+                '请运行 session_bootstrap.py 刷新专用浏览器会话，或在交互菜单选择“刷新浏览器会话”。'
             )
 
         # 检查是否有搜索结果
@@ -1107,6 +1118,8 @@ def main():
                    help='每日增量同步：按登记号+正文指纹，仅写入新增或变更的 JSON')
     r.add_argument('--debug', action='store_true',
                    help='兼容参数：详情 raw HTML 现在始终保存到 raw/ 目录')
+    r.add_argument('--auto-refresh-session', action='store_true',
+                   help='检测到反爬挑战页时启动专用浏览器刷新 Cookie，并自动重试一次')
 
     args = parser.parse_args()
 
@@ -1134,16 +1147,16 @@ def main():
     safe_kw = re.sub(r'[^\w\u4e00-\u9fff]', '_', args.keywords)
     output_dir = os.path.join(args.output, safe_kw)
 
-    # 创建抓取器
-    scraper = ChinaDrugTrialsScraper(
-        cookies_str=args.cookies,
-        cookies_file=args.cookies_file,
-        output_dir=output_dir,
-        delay=args.delay,
-        max_retries=args.max_retries,
-        debug=args.debug,
-        incremental=args.incremental,
-    )
+    def build_scraper():
+        return ChinaDrugTrialsScraper(
+            cookies_str=args.cookies,
+            cookies_file=args.cookies_file,
+            output_dir=output_dir,
+            delay=args.delay,
+            max_retries=args.max_retries,
+            debug=args.debug,
+            incremental=args.incremental,
+        )
 
     # 构建高级搜索参数
     advanced = {
@@ -1159,21 +1172,47 @@ def main():
         'state':       args.state,
     }
 
-    # 运行
-    try:
-        scraper.run(
-            keywords=args.keywords,
-            max_pages=args.max_pages,
-            resume=args.resume,
-            **advanced,
-        )
-        return 0
-    except KeyboardInterrupt:
-        scraper.logger.info("\n用户中断，已保存部分结果")
-        return 130
-    except Exception as e:
-        scraper.logger.error(f"运行失败: {e}", exc_info=True)
-        return 1
+    # 运行。遇到挑战页时，可选择建立专用浏览器会话并读取刷新后的本地 Cookie 后仅重试一次。
+    scraper = build_scraper()
+    for attempt in range(2):
+        try:
+            scraper.run(
+                keywords=args.keywords,
+                max_pages=args.max_pages,
+                resume=args.resume,
+                **advanced,
+            )
+            return 0
+        except KeyboardInterrupt:
+            scraper.logger.info("\n用户中断，已保存部分结果")
+            return 130
+        except Exception as e:
+            message = str(e)
+            can_refresh = args.auto_refresh_session and attempt == 0 and '反爬挑战页' in message and args.config
+            if not can_refresh:
+                scraper.logger.error(f"运行失败: {e}", exc_info=True)
+                return 1
+
+            scraper.logger.warning('检测到挑战页，正在启动专用浏览器刷新会话；完成正常人工验证后将自动重试一次。')
+            refresh_command = [
+                sys.executable,
+                str(Path(__file__).resolve().parent / 'session_bootstrap.py'),
+                '--config', str(args.config),
+                '--keywords', args.keywords,
+                '--state', args.state,
+            ]
+            refresh = subprocess.run(refresh_command)
+            if refresh.returncode != 0:
+                scraper.logger.error(f'会话刷新未通过，返回码: {refresh.returncode}')
+                return 1
+            with open(args.config, 'r', encoding='utf-8') as f:
+                refreshed_config = json.load(f)
+            args.cookies = refreshed_config.get('cookies', '')
+            if not args.cookies:
+                scraper.logger.error('会话刷新后未读到 Cookie，任务已停止。')
+                return 1
+            scraper = build_scraper()
+    return 1
 
 
 if __name__ == '__main__':

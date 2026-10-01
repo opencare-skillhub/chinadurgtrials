@@ -14,6 +14,7 @@ china-drug-trials-skills/
 │   ├── scraper.py
 │   ├── main.py
 │   ├── cookie_tools.py
+│   ├── session_bootstrap.py
 │   ├── build_json_from_raw.py
 │   ├── verify_output.py
 │   ├── config.example.json
@@ -33,11 +34,24 @@ cd china-drug-trials-skills
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r scripts/requirements.txt
+python3 -m playwright install chromium
 cp scripts/config.example.json config.json
 python3 scripts/main.py
 ```
 
-`main.py` 会在当前目录读取/创建 `config.json`。其 Cookie 更新菜单支持粘贴浏览器 cURL 或 HTTP 响应头。若脚本报“站点返回反爬挑战页”，请不要把它误判为 0 条结果；需从浏览器实际搜索请求复制完整 cURL 更新会话。
+`main.py` 会在当前目录读取/创建 `config.json`。Cookie 管理优先选择菜单 **3. 刷新浏览器会话**：它只启动并使用本 Skill 自己的 Chromium Profile，自动导出 `chinadrugtrials.org.cn` Cookie，验证一次真实搜索，并把本地 cURL 保存到 `.session/latest-search.curl`。不会读取日常 Chrome Profile；如站点要求人工验证，只需在该专用窗口中按正常流程完成后回到终端按回车。
+
+也可直接运行：
+
+```bash
+# 打开可见的专用浏览器并刷新会话
+python3 scripts/session_bootstrap.py --config config.json --keywords "胰腺癌" --state "招募中"
+
+# 检测到挑战页时自动尝试刷新会话，然后只重试一次
+python3 scripts/scraper.py --config config.json --incremental --auto-refresh-session
+```
+
+`.browser-profile/`、`.session/`、`config.json` 都被 `.gitignore` 排除，可能含会话凭证，不能提交或发送。若程序仍报告会话未验证，不会把结果误报为“0 条”；请完成网站正常要求的人工确认后再次执行刷新。
 
 也可以直接运行：
 
